@@ -877,14 +877,14 @@ def main():
             while True:
                     print slack_client.rtm_read()
                     find_poi(api, position[0], position[1], slack_client)
-                    time.sleep(60)
+                    time.sleep(180)
     else:
         print "Connection Failed, invalid token?"
 
 def find_poi(api, lat, lng, slack_client):
     poi = {'pokemons': {}, 'forts': []}
-    step_size = 0.000085
-    step_limit = 38
+    step_size = 0.000075
+    step_limit = 20
     coords = generate_spiral(lat, lng, step_size, step_limit)
     for coord in coords:
         lat = coord['lat']
