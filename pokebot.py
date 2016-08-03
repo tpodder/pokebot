@@ -11,6 +11,7 @@ import requests
 import argparse
 import pprint
 import pykemon
+import math
 
 from pgoapi import PGoApi
 from pgoapi.utilities import f2i, h2f
@@ -20,17 +21,8 @@ from google.protobuf.internal import encoder
 from geopy.geocoders import GoogleV3
 from s2sphere import Cell, CellId, LatLng
 
-import os
-import time
 from slackclient import SlackClient
-    
-    
-    
-
-log = logging.getLogger(__name__)
-
-import os
-import time
+ 
 
 # TODO:  - Put pokemon names in a JSON array
 #        - Have slack commands to get pokemon info/ bot info. Not only alert
@@ -39,6 +31,8 @@ import time
 #        - Add pokepedia 
 #        - Add AI command parsing stuff
 #        - Add google maps visualization
+
+log = logging.getLogger(__name__)
 
 pokemonNames =  ["Bulbasaur",
 	"Ivysaur",
@@ -944,7 +938,6 @@ def print_gmaps_dbug(coords):
 
 #http://gis.stackexchange.com/questions/15545/calculating-coordinates-of-square-x-miles-from-center-point
 def coords_square(starting_lat, starting_lng):
-    import math
     coords = [{'lat': starting_lat, 'lng': starting_lng}]
     dlat = 0.060/69        # North-south distance in degrees
     dlon = dlat / math.cos(starting_lat) # East-west distance in degrees
