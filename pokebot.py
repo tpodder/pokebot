@@ -32,6 +32,14 @@ log = logging.getLogger(__name__)
 import os
 import time
 
+# TODO:  - Put pokemon names in a JSON array
+#        - Have slack commands to get pokemon info/ bot info. Not only alert
+#        - better polling mechanism
+#        - cache pokemon? query from time to time, keep it somewhere, and then send alerts 2 minutes and 0 minutes away
+#        - Add pokepedia 
+#        - Add AI command parsing stuff
+#        - Add google maps visualization
+
 pokemonNames =  ["Bulbasaur",
 	"Ivysaur",
 	"Venusaur",
@@ -877,23 +885,18 @@ def main():
             while True:
                     print slack_client.rtm_read()
                     find_poi(api, position[0], position[1], slack_client)
-                    time.sleep(180)
+                    time.sleep(60)
     else:
         print "Connection Failed, invalid token?"
 
 def find_poi(api, lat, lng, slack_client):
     poi = {'pokemons': {}, 'forts': []}
-    step_size = 0.000075
-    step_limit = 20
-    coords = generate_spiral(lat, lng, step_size, step_limit)
+    coords = coords_square(lat, lng)
     for coord in coords:
         lat = coord['lat']
         lng = coord['lng']
         api.set_position(lat, lng, 0)
 
-        
-        #get_cellid was buggy -> replaced through get_cell_ids from pokecli
-        #timestamp gets computed a different way:
         from geopy.geocoders import Nominatim
         geolocator = Nominatim()
         cell_ids = get_cell_ids(lat, lng)
@@ -906,38 +909,30 @@ def find_poi(api, lat, lng, slack_client):
                         if 'wild_pokemons' in map_cell:
                             for pokemon in map_cell['wild_pokemons']:
                                 pokekey = get_key_from_pokemon(pokemon)
-                                pokemon['hides_at'] = (time.clock() + pokemon['time_till_hidden_ms']/1000)/60
-                                pokemon['location'] =  geolocator.reverse(repr(pokemon['latitude'])+", "+repr(pokemon['longitude'])).address
+                                pokemon['hides_at'] = (pokemon['time_till_hidden_ms']/1000)/60
+                                address = geolocator.reverse(repr(pokemon['latitude'])+", "+repr(pokemon['longitude'])).address
+                                sep = ', Financial District'
+                                rest = address.split(sep, 1)[0]
+                                pokemon['location'] = rest  
+                                pokemon['name'] = pokemonNames[pokemon['pokemon_data']['pokemon_id']-1]
                                 poi['pokemons'][pokekey] = pokemon
-                                pokemon['distance'] = distance(lat, lng, pokemon['latitude'], pokemon['longitude'])
-                                #if pokemon['distance'] < 20: 
-        #                            slack_client.api_call(
-        #        "chat.postMessage", channel="#pokemon", text="Pokelert! " + pokemonNames[pokemon['pokemon_data']['pokemon_id'] -1]+" at "+ pokemon['location'] +" hiding for "+ str(pokemon['hides_at']) + " minutes",
-        #        username='pokebot', user="tanushree"
-        #)
+                    
             time.sleep(0.7)
-    # new dict, binary data
-    # print('POI dictionary: \n\r{}'.format(json.dumps(poi, indent=2)))
+    textSlack = ""
+    for pokemon in poi['pokemons']:
+        print(pokemon)
+        if poi['pokemons'][pokemon]['hides_at'] < 2.85:
+            textSlack += poi['pokemons'][pokemon]['name']+" at " + poi['pokemons'][pokemon]['location']+ " hiding for "+"{0:.2f}".format(poi['pokemons'][pokemon]['hides_at']) + " minutes \n"
+            
+            
+    slack_client.api_call(
+                "chat.postMessage", channel="#pokemon", text=textSlack,
+                username='pokebot', as_user = True
+        )
     print('POI dictionary: \n\r{}'.format(pprint.PrettyPrinter(indent=4).pformat(poi)))
     print('Open this in a browser to see the path the spiral search took:')
     print_gmaps_dbug(coords)
     
-def distance(lat1, lon1, lat2, lon2):
-    from geopy.distance import great_circle
-    from math import radians, cos, sin, asin, sqrt
-    pointA = (lat1, lon1)
-    pointB = (lat2, lon2)
-    #return great_circle(pointA, pointB).meters
-    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-    # haversine formula 
-    dlon = lon2 - lon1 
-    dlat = lat2 - lat1 
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * asin(sqrt(a)) 
-    m = 6367 * c * 1000
-    return m
-        
-
 def get_key_from_pokemon(pokemon):
     return '{}-{}'.format(pokemon['spawn_point_id'], pokemon['pokemon_data']['pokemon_id'])
 
@@ -947,28 +942,20 @@ def print_gmaps_dbug(coords):
         url_string += '{},{}|'.format(coord['lat'], coord['lng'])
     print(url_string[:-1])
 
-def generate_spiral(starting_lat, starting_lng, step_size, step_limit):
+#http://gis.stackexchange.com/questions/15545/calculating-coordinates-of-square-x-miles-from-center-point
+def coords_square(starting_lat, starting_lng):
+    import math
     coords = [{'lat': starting_lat, 'lng': starting_lng}]
-    steps,x,y,d,m = 1, 0, 0, 1, 1
-    rlow = 0.0
-    rhigh = 0.0005
-
-    while steps < step_limit:
-        while 2 * x * d < m and steps < step_limit:
-            x = x + d
-            steps += 1
-            lat = x * step_size + starting_lat + random.uniform(rlow, rhigh)
-            lng = y * step_size + starting_lng + random.uniform(rlow, rhigh)
-            coords.append({'lat': lat, 'lng': lng})
-        while 2 * y * d < m and steps < step_limit:
-            y = y + d
-            steps += 1
-            lat = x * step_size + starting_lat + random.uniform(rlow, rhigh)
-            lng = y * step_size + starting_lng + random.uniform(rlow, rhigh)
-            coords.append({'lat': lat, 'lng': lng})
-
-        d = -1 * d
-        m = m + 1
+    dlat = 0.060/69        # North-south distance in degrees
+    dlon = dlat / math.cos(starting_lat) # East-west distance in degrees
+    southernMostLat = starting_lat - dlat 
+    northernMostLat = starting_lat + dlat 
+    westernLong = starting_lng - dlon 
+    easternLong = starting_lng + dlon 
+    coords.append({'lat': southernMostLat, 'lng': westernLong})
+    coords.append({'lat': northernMostLat, 'lng': westernLong})
+    coords.append({'lat': northernMostLat, 'lng': easternLong})
+    coords.append({'lat': southernMostLat, 'lng': easternLong})
     return coords
 
 if __name__ == '__main__':
