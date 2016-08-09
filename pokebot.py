@@ -11,7 +11,6 @@ import requests
 import argparse
 import pprint
 import pykemon
-import math
 
 from pgoapi import PGoApi
 from pgoapi.utilities import f2i, h2f
@@ -21,18 +20,70 @@ from google.protobuf.internal import encoder
 from geopy.geocoders import GoogleV3
 from s2sphere import Cell, CellId, LatLng
 
+import os
+import time
 from slackclient import SlackClient
- 
-
-# TODO:  - Put pokemon names in a JSON array
-#        - Have slack commands to get pokemon info/ bot info. Not only alert
-#        - better polling mechanism
-#        - cache pokemon? query from time to time, keep it somewhere, and then send alerts 2 minutes and 0 minutes away
-#        - Add pokepedia 
-#        - Add AI command parsing stuff
-#        - Add google maps visualization
+    
+    
+    
 
 log = logging.getLogger(__name__)
+
+import os
+import time
+
+
+
+
+# starterbot's ID as an environment variable
+BOT_ID = os.environ.get("BOT_ID")
+
+# constants
+AT_BOT = "<@" + BOT_ID + ">:"
+EXAMPLE_COMMAND = "find"
+EXAMPLE_COMMAND_2 = "about pokebot"
+
+# instantiate Slack & Twilio clients
+slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
+
+
+def handle_command(command, channel):
+    """
+        Receives commands directed at the bot and determines if they
+        are valid commands. If so, then acts on the commands. If not,
+        returns back what it needs for clarification.
+    """
+    response = "Not sure what you mean. Use the *" + EXAMPLE_COMMAND + \
+               "* command with numbers, delimited by spaces."
+    if command.startswith(EXAMPLE_COMMAND):
+        response = "Sure...write some more code then I can do that!"
+    if command.startswith(EXAMPLE_COMMAND_2):
+        response = "Hi, I'm pokebot! :simple_smile: I send you alerts about nearby pokemon so that you can catch 'em all."
+    slack_client.api_call("chat.postMessage", channel=channel,
+                          text=response, as_user=True,
+                username='pokebot')
+
+
+def parse_slack_output(slack_rtm_output):
+    """
+        The Slack Real Time Messaging API is an events firehose.
+        this parsing function returns None unless a message is
+        directed at the Bot, based on its ID.
+    """
+    output_list = slack_rtm_output
+    if output_list and len(output_list) > 0:
+        for output in output_list:
+            if output and 'text' in output and AT_BOT in output['text']:
+                # return text after the @ mention, whitespace removed
+                return output['text'].split(AT_BOT)[1].strip().lower(), \
+                       output['channel']
+    return None, None
+
+
+# TODO: 1) Put pokemon names in a JSON array
+#       6) cache pokemon? query from time to time, keep it somewhere, and then send alerts 2 minutes and 0 minutes away
+#       7) Add pokepedia 
+#       9) Add google maps visualization
 
 pokemonNames =  ["Bulbasaur",
 	"Ivysaur",
@@ -767,7 +818,7 @@ def get_pos_by_name(location_name):
 
     return (loc.latitude, loc.longitude, loc.altitude)
 
-def get_cell_ids(lat, long, radius = 10):
+def get_cell_ids(lat, long, radius = 20):
     origin = CellId.from_lat_lng(LatLng.from_degrees(lat, long)).parent(15)
     walk = [origin.id()]
     right = origin.next()
@@ -872,16 +923,21 @@ def main():
     # apparently new dict has binary data in it, so formatting it with this method no longer works, pprint works here but there are other alternatives    
     # print('Response dictionary: \n\r{}'.format(json.dumps(response_dict, indent=2)))
      # instantiate Slack & Twilio clients
-    from slackclient import SlackClient
-    slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
-    print('Response dictionary: \n\r{}'.format(pprint.PrettyPrinter(indent=4).pformat(response_dict)))
+    READ_WEBSOCKET_DELAY = 30 # 1 second delay between reading from firehose
+    starttime=time.time()
     if slack_client.rtm_connect():
-            while True:
-                    print slack_client.rtm_read()
-                    find_poi(api, position[0], position[1], slack_client)
-                    time.sleep(60)
+        print("StarterBot connected and running!")
+        while True:
+            #currentTime = time.time()
+            #command, channel = parse_slack_output(slack_client.rtm_read())
+            #if command and channel:
+            #    handle_command(command, channel)
+            #if currentTime >= starttime + 60:
+            #    starttime = time.time()
+            find_poi(api, position[0], position[1], slack_client)
+            time.sleep(READ_WEBSOCKET_DELAY)
     else:
-        print "Connection Failed, invalid token?"
+        print("Connection failed. Invalid Slack token or bot ID?")
 
 def find_poi(api, lat, lng, slack_client):
     poi = {'pokemons': {}, 'forts': []}
@@ -915,8 +971,7 @@ def find_poi(api, lat, lng, slack_client):
     textSlack = ""
     for pokemon in poi['pokemons']:
         print(pokemon)
-        if poi['pokemons'][pokemon]['hides_at'] < 2.85:
-            textSlack += poi['pokemons'][pokemon]['name']+" at " + poi['pokemons'][pokemon]['location']+ " hiding for "+"{0:.2f}".format(poi['pokemons'][pokemon]['hides_at']) + " minutes \n"
+        textSlack += poi['pokemons'][pokemon]['name']+" at " + poi['pokemons'][pokemon]['location']+ " hiding for "+"{0:.2f}".format(poi['pokemons'][pokemon]['hides_at']) + " minutes \n"
             
             
     slack_client.api_call(
@@ -938,6 +993,7 @@ def print_gmaps_dbug(coords):
 
 #http://gis.stackexchange.com/questions/15545/calculating-coordinates-of-square-x-miles-from-center-point
 def coords_square(starting_lat, starting_lng):
+    import math
     coords = [{'lat': starting_lat, 'lng': starting_lng}]
     dlat = 0.060/69        # North-south distance in degrees
     dlon = dlat / math.cos(starting_lat) # East-west distance in degrees
