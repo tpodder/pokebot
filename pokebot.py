@@ -42,6 +42,7 @@ BOT_ID = os.environ.get("BOT_ID")
 AT_BOT = "<@" + BOT_ID + ">:"
 EXAMPLE_COMMAND = "find"
 EXAMPLE_COMMAND_2 = "about pokebot"
+EXAMPLE_COMMAND_3 = "about pokemon"
 
 # instantiate Slack & Twilio clients
 slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
@@ -59,6 +60,23 @@ def handle_command(command, channel):
         response = "Sure...write some more code then I can do that!"
     if command.startswith(EXAMPLE_COMMAND_2):
         response = "Hi, I'm pokebot! :simple_smile: I send you alerts about nearby pokemon so that you can catch 'em all."
+    if command.startswith(EXAMPLE_COMMAND_3):
+        pokemon_name = command.split()[-1]
+        import urllib2, json
+        url = "http://pokeapi.co/api/v2/pokemon/"+pokemon_name
+        print url
+        hdr = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
+       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+       'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
+       'Accept-Encoding': 'none',
+       'Accept-Language': 'en-US,en;q=0.8',
+       'Connection': 'keep-alive'}
+        req = urllib2.Request(url, headers=hdr) 
+        response = urllib2.urlopen(req)
+        data = json.loads(response.read())
+        pokemon = pykemon.get(pokemon=pokemon_name)
+        print pokemon
+        response = "\t\tInfomon\nName:\t"+str(data['base_experience'])# +"\nBase Experience:\t"+pokemon['base_experience']
     slack_client.api_call("chat.postMessage", channel=channel,
                           text=response, as_user=True,
                 username='pokebot')
@@ -84,6 +102,7 @@ def parse_slack_output(slack_rtm_output):
 #       6) cache pokemon? query from time to time, keep it somewhere, and then send alerts 2 minutes and 0 minutes away
 #       7) Add pokepedia 
 #       9) Add google maps visualization
+#       10) Office Valor Vs Instinct competition
 
 pokemonNames =  ["Bulbasaur",
 	"Ivysaur",
@@ -923,18 +942,18 @@ def main():
     # apparently new dict has binary data in it, so formatting it with this method no longer works, pprint works here but there are other alternatives    
     # print('Response dictionary: \n\r{}'.format(json.dumps(response_dict, indent=2)))
      # instantiate Slack & Twilio clients
-    READ_WEBSOCKET_DELAY = 30 # 1 second delay between reading from firehose
+    READ_WEBSOCKET_DELAY = 1 # 1 second delay between reading from firehose
     starttime=time.time()
     if slack_client.rtm_connect():
         print("StarterBot connected and running!")
         while True:
-            #currentTime = time.time()
-            #command, channel = parse_slack_output(slack_client.rtm_read())
-            #if command and channel:
-            #    handle_command(command, channel)
-            #if currentTime >= starttime + 60:
-            #    starttime = time.time()
-            find_poi(api, position[0], position[1], slack_client)
+            currentTime = time.time()
+            command, channel = parse_slack_output(slack_client.rtm_read())
+            if command and channel:
+                handle_command(command, channel)
+            if currentTime >= starttime + 60:
+                starttime = time.time()
+                find_poi(api, position[0], position[1], slack_client)
             time.sleep(READ_WEBSOCKET_DELAY)
     else:
         print("Connection failed. Invalid Slack token or bot ID?")
