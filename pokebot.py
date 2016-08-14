@@ -11,6 +11,8 @@ import requests
 import argparse
 import pprint
 import pykemon
+import urllib2, json
+import random
 
 from pgoapi import PGoApi
 from pgoapi.utilities import f2i, h2f
@@ -42,6 +44,8 @@ BOT_ID = os.environ.get("BOT_ID")
 AT_BOT = "<@" + BOT_ID + ">:"
 ABOUT_POKEBOT_COMMAND = "about pokebot"
 ABOUT_POKEMON_COMMAND = "about pokemon"
+JOKE_COMMAND = "jokemon"
+QUOTES_COMMAND = "quotes"
 
 # instantiate Slack & Twilio clients
 slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
@@ -49,41 +53,43 @@ slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
 with open('pokemonNames.json') as data_file:    
     pokemonNames = json.load(data_file)
 
+with open('pokemonMemes.json') as data_file:    
+    pokemonMemes = json.load(data_file)
+    
+with open('pokemonQuotes.json') as data_file:    
+    pokemonQuotes = json.load(data_file)
+    
+pokemonMemesSize = len(pokemonMemes)
+pokemonQuotesSize = len(pokemonQuotes)
+
+laughingResponses = [ "LOL :joy: :laughing:", "ROFL :laughing: :joy:", "haha :joy: :joy: :joy:", "Get it, eh? :wink:"]
+laughingResponsesSize = len(laughingResponses)
+
+quoteResponses = ["Have a great day :simple_smile:", ":+1: :ok_hand: :simple_smile:", ":upside_down_face:"]
+quoteResponsesSize = len(quoteResponses)
+
+#https://www.fullstackpython.com/blog/build-first-slack-bot-python.html
 def handle_command(command, channel):
     """
         Receives commands directed at the bot and determines if they
         are valid commands. If so, then acts on the commands. If not,
         returns back what it needs for clarification.
     """
-    response = "Not sure what you mean. Use the *" + EXAMPLE_COMMAND + \
-               "* command with numbers, delimited by spaces."
-    if command.startswith(ABOUT_POKEBOT_COMMAND):
-        response = "Hi, I'm pokebot! :simple_smile: I send you alerts about nearby pokemon so that you can catch 'em all."
+    response = "Hi! I'm not sure what you mean. :confused:\nWhat can I do?\n- I send you alerts about nearby pokemon. :poke:"
+    useCommandResponse ="\nUse command\n- about pokebot: To know more about me. \n- about pokemon pokemon_name: To know more about your favourite pokemon. \n- jokemon: I'll tell you pokemon jokes and share memes.\n- quotes: I'll share quotes with you"
+    if command.startswith(ABOUT_POKEBOT_COMMAND) or command.startswith("hi") or command.startswith("Hi") or command.startswith("Hi!") or command.startswith("What's up?") or command.startswith("sup"):
+        response = "Hi, I'm pokebot! :simple_smile: I send you alerts about nearby pokemon so that you can catch 'em all." + useCommandResponse
     if command.startswith(ABOUT_POKEMON_COMMAND):
         pokemon_name = command.split()[-1]
-        import urllib2, json
-        url = "http://pokeapi.co/api/v2/pokemon/"+pokemon_name
-        print url
-        hdr = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
-       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-       'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
-       'Accept-Encoding': 'none',
-       'Accept-Language': 'en-US,en;q=0.8',
-       'Connection': 'keep-alive'}
-        req = urllib2.Request(url, headers=hdr)
-        try: 
-            response = urllib2.urlopen(req)
-            data = json.loads(response.read())
-            response = "\t\tInfomon :poke:\nName:\t"+str(data['name']) +"\nBase Experience:\t"+str(data['base_experience'])+"\nHeight:\t"+str(data['height']/float(10))+" m"+"\nWeight:\t"+str(data['weight']/float(10))+" kg"+"\nSpecies:\t"+data['species']['name']+"\nAbilities:\t"
-            for ability in data['abilities']:
-                response += ability['ability']['name']+", "
-            response = response[:-2]
-            response += "\nTypes:\t"
-            for poketype in data['types']:
-                response += poketype['type']['name']+", "
-            response = response[:-2]
-        except urllib2.HTTPError, error:
-            response = "Sorry, pokemon not found. Are you sure that pokemon exists?"
+        response = get_pokemon_info(pokemon_name)
+    if command.startswith(JOKE_COMMAND):
+        randomMemeIndex = random.randint(0,pokemonMemesSize - 1)
+        randomLaughingResponsesIndex = random.randint(0,laughingResponsesSize - 1)
+        response = laughingResponses[randomLaughingResponsesIndex]+"\n"+pokemonMemes[randomMemeIndex]
+    if command.startswith(QUOTES_COMMAND):
+        randomQuoteIndex = random.randint(0,pokemonQuotesSize - 1)
+        randomQuoteResponsesIndex = random.randint(0,quoteResponsesSize - 1)
+        response = quoteResponses[randomQuoteResponsesIndex]+"\n"+pokemonQuotes[randomQuoteIndex]
     slack_client.api_call("chat.postMessage", channel=channel,
                           text=response, as_user=True,
                 username='pokebot')
@@ -103,6 +109,30 @@ def parse_slack_output(slack_rtm_output):
                 return output['text'].split(AT_BOT)[1].strip().lower(), \
                        output['channel']
     return None, None
+    
+def get_pokemon_info(pokemon_name):
+     url = "http://pokeapi.co/api/v2/pokemon/"+pokemon_name
+     hdr = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
+     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+     'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
+     'Accept-Encoding': 'none',
+     'Accept-Language': 'en-US,en;q=0.8',
+     'Connection': 'keep-alive'}
+     req = urllib2.Request(url, headers=hdr)
+     try: 
+          response = urllib2.urlopen(req)
+          data = json.loads(response.read())
+          response = "\t\tInfomon :poke:\nName:\t"+str(data['name']) +"\nBase Experience:\t"+str(data['base_experience'])+"\nHeight:\t"+str(data['height']/float(10))+" m"+"\nWeight:\t"+str(data['weight']/float(10))+" kg"+"\nSpecies:\t"+data['species']['name']+"\nAbilities:\t"
+          for ability in data['abilities']:
+              response += ability['ability']['name']+", "
+          response = response[:-2]
+          response += "\nTypes:\t"
+          for poketype in data['types']:
+              response += poketype['type']['name']+", "
+          response = response[:-2]
+     except urllib2.HTTPError, error:
+            response = "Sorry, pokemon not found. Are you sure that pokemon exists?"
+     return response
 
 def get_pos_by_name(location_name):
     geolocator = GoogleV3()
