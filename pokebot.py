@@ -34,7 +34,9 @@ log = logging.getLogger(__name__)
 import os
 import time
 
-
+# TODO: 1) Fix minute/minutes error in response string
+#       2) Caching pokemon
+#       3) Custom messages for people with a special list ok pokemon
 
 
 # starterbot's ID as an environment variable
@@ -67,6 +69,9 @@ laughingResponsesSize = len(laughingResponses)
 
 quoteResponses = ["Have a great day :simple_smile:", ":+1: :ok_hand: :simple_smile:", ":upside_down_face:"]
 quoteResponsesSize = len(quoteResponses)
+
+unwantedPokemon = [ "Jynx", "Zubat", "Rattata", "Drowzee"]
+minimumAlertTime = 2
 
 #https://www.fullstackpython.com/blog/build-first-slack-bot-python.html
 def handle_command(command, channel):
@@ -292,13 +297,14 @@ def find_poi(api, lat, lng, slack_client):
                         if 'wild_pokemons' in map_cell:
                             for pokemon in map_cell['wild_pokemons']:
                                 pokekey = get_key_from_pokemon(pokemon)
-                                pokemon['hides_at'] = (pokemon['time_till_hidden_ms']/1000)/60
-                                address = geolocator.reverse(repr(pokemon['latitude'])+", "+repr(pokemon['longitude'])).address
-                                sep = ', Financial District'
-                                rest = address.split(sep, 1)[0]
-                                pokemon['location'] = rest  
                                 pokemon['name'] = pokemonNames[pokemon['pokemon_data']['pokemon_id']-1]
-                                poi['pokemons'][pokekey] = pokemon
+                                pokemon['hides_at'] = (pokemon['time_till_hidden_ms']/1000)/60
+                                if pokemon['name'] not in unwantedPokemon and pokemon['hides_at'] <= minimumAlertTime:
+                                    address = geolocator.reverse(repr(pokemon['latitude'])+", "+repr(pokemon['longitude'])).address
+                                    sep = ', Financial District'
+                                    rest = address.split(sep, 1)[0]
+                                    pokemon['location'] = rest  
+                                    poi['pokemons'][pokekey] = pokemon
                     
             time.sleep(0.7)
     textSlack = ""
