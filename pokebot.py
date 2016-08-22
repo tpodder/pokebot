@@ -34,10 +34,10 @@ log = logging.getLogger(__name__)
 import os
 import time
 
-# TODO: 1) Fix minute/minutes error in response string
-#       2) Caching pokemon
-#       3) Custom messages for people with a special list ok pokemon
-
+# TODO: In special alert:
+#           - remove pokemon
+#           - reset list
+#           - append
 
 # starterbot's ID as an environment variable
 BOT_ID = os.environ.get("BOT_ID")
@@ -47,7 +47,12 @@ AT_BOT = "<@" + BOT_ID + ">:"
 ABOUT_POKEBOT_COMMAND = "about pokebot"
 ABOUT_POKEMON_COMMAND = "about pokemon"
 JOKE_COMMAND = "jokemon"
-QUOTES_COMMAND = "quotes"
+QUOTES_COMMAND = "quotemon"
+SPECIAL_ALERT_COMMAND = "pokemon list"
+HELP_COMMAND = "help"
+
+MINIMUM_ALERT_TIME_UB = 2.5
+MINIMUM_ALERT_TIME_LB = 1.5
 
 # instantiate Slack & Twilio clients
 slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
@@ -71,19 +76,24 @@ quoteResponses = ["Have a great day :simple_smile:", ":+1: :ok_hand: :simple_smi
 quoteResponsesSize = len(quoteResponses)
 
 unwantedPokemon = [ "Jynx", "Zubat", "Rattata", "Drowzee"]
-minimumAlertTime = 2
+
+specialAlertUser = {}
+
 
 #https://www.fullstackpython.com/blog/build-first-slack-bot-python.html
-def handle_command(command, channel):
+def handle_command(command, channel, user):
     """
         Receives commands directed at the bot and determines if they
         are valid commands. If so, then acts on the commands. If not,
         returns back what it needs for clarification.
     """
     response = "Hi! I'm not sure what you mean. :confused:\nWhat can I do?\n- I send you alerts about nearby pokemon. :poke:"
-    useCommandResponse ="\nUse command\n- about pokebot: To know more about me. \n- about pokemon pokemon_name: To know more about your favourite pokemon. \n- jokemon: I'll tell you pokemon jokes and share memes.\n- quotes: I'll share quotes with you"
+    useCommandResponse ="\nUse command\n- about pokebot: To know more about me. \n- about pokemon pokemon_name: To know more about your favourite pokemon. \n- pokemon list: Sends special alerts for the listed pokemon only to the user enetering the list, Make sure you enter the list along with the command.  \n- jokemon: I'll tell you pokemon jokes and share memes.\n- quotemon: I'll share quotes with you"
+    response = response + useCommandResponse
     if command.startswith(ABOUT_POKEBOT_COMMAND) or command.startswith("hi") or command.startswith("Hi") or command.startswith("Hi!") or command.startswith("What's up?") or command.startswith("sup"):
         response = "Hi, I'm pokebot! :simple_smile: I send you alerts about nearby pokemon so that you can catch 'em all." + useCommandResponse
+    if command.startswith(HELP_COMMAND):
+        response = "Pokebot is here to help :simple_smile:\n" + useCommandResponse
     if command.startswith(ABOUT_POKEMON_COMMAND):
         pokemon_name = command.split()[-1]
         response = get_pokemon_info(pokemon_name)
@@ -95,9 +105,12 @@ def handle_command(command, channel):
         randomQuoteIndex = random.randint(0,pokemonQuotesSize - 1)
         randomQuoteResponsesIndex = random.randint(0,quoteResponsesSize - 1)
         response = quoteResponses[randomQuoteResponsesIndex]+"\n"+pokemonQuotes[randomQuoteIndex]
+    if command.startswith(SPECIAL_ALERT_COMMAND):
+        response, channel = get_listed_pokemon_response(command, channel, user)
     slack_client.api_call("chat.postMessage", channel=channel,
                           text=response, as_user=True,
                 username='pokebot')
+
 
 
 def parse_slack_output(slack_rtm_output):
@@ -112,8 +125,8 @@ def parse_slack_output(slack_rtm_output):
             if output and 'text' in output and AT_BOT in output['text']:
                 # return text after the @ mention, whitespace removed
                 return output['text'].split(AT_BOT)[1].strip().lower(), \
-                       output['channel']
-    return None, None
+                       output['channel'], output['user']
+    return None, None, None
     
 def get_pokemon_info(pokemon_name):
      url = "http://pokeapi.co/api/v2/pokemon/"+pokemon_name
@@ -138,6 +151,21 @@ def get_pokemon_info(pokemon_name):
      except urllib2.HTTPError, error:
             response = "Sorry, pokemon not found. Are you sure that pokemon exists?"
      return response
+     
+def get_listed_pokemon_response(command, channel, user):
+    command = command.lower()
+    wantedPokemons = command.split()
+    wantedPokemons.remove('pokemon') # remove the first two elements 'pokemon list'
+    wantedPokemons.remove('list')
+    if len(wantedPokemons) > 0:
+        specialAlertUser[user] = wantedPokemons
+        response = "Special alert activated for pokemon:\n"
+        for pokemon in wantedPokemons:
+            response += pokemon + "\n"
+            channel = user
+    else:
+        response = "Please enter a list of pokemon along with the command.\nExample: pokemon list\npikachu\nbutterfree\njynx"
+    return response, channel
 
 def get_pos_by_name(location_name):
     geolocator = GoogleV3()
@@ -267,9 +295,9 @@ def main():
         print("StarterBot connected and running!")
         while True:
             currentTime = time.time()
-            command, channel = parse_slack_output(slack_client.rtm_read())
+            command, channel, user = parse_slack_output(slack_client.rtm_read())
             if command and channel:
-                handle_command(command, channel)
+                handle_command(command, channel, user)
             if currentTime >= starttime + 60:
                 starttime = time.time()
                 find_poi(api, position[0], position[1], slack_client)
@@ -299,12 +327,23 @@ def find_poi(api, lat, lng, slack_client):
                                 pokekey = get_key_from_pokemon(pokemon)
                                 pokemon['name'] = pokemonNames[pokemon['pokemon_data']['pokemon_id']-1]
                                 pokemon['hides_at'] = (pokemon['time_till_hidden_ms']/1000)/60
-                                if pokemon['name'] not in unwantedPokemon and pokemon['hides_at'] <= minimumAlertTime:
+                                if pokemon['name'] not in unwantedPokemon and pokemon['hides_at'] >= MINIMUM_ALERT_TIME_LB and pokemon['hides_at'] <= MINIMUM_ALERT_TIME_UB:
                                     address = geolocator.reverse(repr(pokemon['latitude'])+", "+repr(pokemon['longitude'])).address
                                     sep = ', Financial District'
                                     rest = address.split(sep, 1)[0]
                                     pokemon['location'] = rest  
                                     poi['pokemons'][pokekey] = pokemon
+                                    for user in specialAlertUser:
+                                        pokemonList = specialAlertUser[user]
+                                        searchFor =  pokemon['name'].lower()
+                                        if searchFor in  pokemonList:
+                                            text = searchFor+" at "+pokemon['location']+"hidinf for"+"{0:.2f}".format(pokemon['hides_at']) + " minutes \n"
+                                            slack_client.api_call(
+                                                                "chat.postMessage", channel=user, text=text,
+                                                                username='pokebot', as_user = True
+                                                        )
+                                    
+                                    
                     
             time.sleep(0.7)
     textSlack = ""
