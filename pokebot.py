@@ -22,34 +22,25 @@ from google.protobuf.internal import encoder
 from geopy.geocoders import GoogleV3
 from s2sphere import Cell, CellId, LatLng
 
-import os
-import time
 from slackclient import SlackClient
     
-    
-    
-
 log = logging.getLogger(__name__)
-
-import os
-import time
-
-# TODO: In special alert:
-#           - remove pokemon
-#           - reset list
-#           - append
 
 # starterbot's ID as an environment variable
 BOT_ID = os.environ.get("BOT_ID")
 
 # constants
-AT_BOT = "<@" + BOT_ID + ">:"
+AT_BOT = "<@" + BOT_ID + ">"
 ABOUT_POKEBOT_COMMAND = "about pokebot"
 ABOUT_POKEMON_COMMAND = "about pokemon"
 JOKE_COMMAND = "jokemon"
 QUOTES_COMMAND = "quotemon"
-SPECIAL_ALERT_COMMAND = "pokemon list"
+SPECIAL_ALERT_COMMAND = "pokelist"
+RESET_LIST_COMMAND = "reset pokelist"
+REMOVE_POKEMON_COMMAND = "remove pokemon"
+CHECK_LIST_COMMAND = "my pokelist"
 HELP_COMMAND = "help"
+NO_LIST_USER = "You don't have any pokemon. To add pokemon enter command \"pokemon list\""
 
 MINIMUM_ALERT_TIME_UB = 2.5
 MINIMUM_ALERT_TIME_LB = 1.5
@@ -88,7 +79,7 @@ def handle_command(command, channel, user):
         returns back what it needs for clarification.
     """
     response = "Hi! I'm not sure what you mean. :confused:\nWhat can I do?\n- I send you alerts about nearby pokemon. :poke:"
-    useCommandResponse ="\nUse command\n- about pokebot: To know more about me. \n- about pokemon pokemon_name: To know more about your favourite pokemon. \n- pokemon list: Sends special alerts for the listed pokemon only to the user enetering the list, Make sure you enter the list along with the command.  \n- jokemon: I'll tell you pokemon jokes and share memes.\n- quotemon: I'll share quotes with you"
+    useCommandResponse ="\nUse command\n- about pokebot: To know more about me. \n- about pokemon pokemon_name: To know more about your favourite pokemon. \n- jokemon: I'll tell you pokemon jokes and share memes.\n- quotemon: I'll share quotes with you\n Get special alerts for the pokemons you want the most. Use commands\n- pokelist: Enter a list of the pokemon you want. Make sure you enter the list along with the command.\n- reset pokelist: Empties your pokelist. \n- remove pokemon: Removes the pokemon(s) from your list.\n- my pokelist: See pokemons in your pokelist  "
     response = response + useCommandResponse
     if command.startswith(ABOUT_POKEBOT_COMMAND) or command.startswith("hi") or command.startswith("Hi") or command.startswith("Hi!") or command.startswith("What's up?") or command.startswith("sup"):
         response = "Hi, I'm pokebot! :simple_smile: I send you alerts about nearby pokemon so that you can catch 'em all." + useCommandResponse
@@ -107,6 +98,17 @@ def handle_command(command, channel, user):
         response = quoteResponses[randomQuoteResponsesIndex]+"\n"+pokemonQuotes[randomQuoteIndex]
     if command.startswith(SPECIAL_ALERT_COMMAND):
         response, channel = get_listed_pokemon_response(command, channel, user)
+    if command.startswith(RESET_LIST_COMMAND):
+       if isEmptyPokelist(user):
+           response = NO_LIST_USER
+       else:
+           specialAlertUser[user] = []
+           response = "Pokelist reset"
+           channel = user
+    if command.startswith(REMOVE_POKEMON_COMMAND):
+       response, channel = remove_pokemon(command, channel, user)
+    if command.startswith(CHECK_LIST_COMMAND):
+        response = print_list(user)
     slack_client.api_call("chat.postMessage", channel=channel,
                           text=response, as_user=True,
                 username='pokebot')
@@ -155,10 +157,12 @@ def get_pokemon_info(pokemon_name):
 def get_listed_pokemon_response(command, channel, user):
     command = command.lower()
     wantedPokemons = command.split()
-    wantedPokemons.remove('pokemon') # remove the first two elements 'pokemon list'
-    wantedPokemons.remove('list')
+    wantedPokemons.remove('pokelist') # remove the first two elements 'pokemon list'
     if len(wantedPokemons) > 0:
-        specialAlertUser[user] = wantedPokemons
+        if user in specialAlertUser.keys():
+            specialAlertUser[user].extend(wantedPokemons)
+        else:
+            specialAlertUser[user] = wantedPokemons
         response = "Special alert activated for pokemon:\n"
         for pokemon in wantedPokemons:
             response += pokemon + "\n"
@@ -166,6 +170,39 @@ def get_listed_pokemon_response(command, channel, user):
     else:
         response = "Please enter a list of pokemon along with the command.\nExample: pokemon list\npikachu\nbutterfree\njynx"
     return response, channel
+
+def remove_pokemon(command, channel, user):
+    command = command.lower()
+    unwantedPokemons = command.split()
+    unwantedPokemons.remove('remove') # remove the first two elements 'pokemon list'
+    unwantedPokemons.remove('pokemon')
+    if len(unwantedPokemons) > 0:
+        if isEmptyPokelist(user):
+            response = NO_LIST_USER
+        else:
+            response = "Removed pokemon:\n"
+            for pokemon in unwantedPokemons:
+                specialAlertUser[user].remove(pokemon)
+                response += pokemon + "\n"
+        channel = user
+    else:
+        response = "Please enter a list of pokemon along with the command.\nExample: remove pokemon:\npikachu\nbutterfree\njynx"
+    return response, channel
+
+def print_list(user):
+    if isEmptyPokelist(user):
+        response = NO_LIST_USER 
+    else:
+        pokeList = specialAlertUser[user]
+        response = "Your list:\n"
+        for pokemon in pokeList:
+            response += pokemon + "\n"
+    return response
+
+def isEmptyPokelist(user):
+    if user in specialAlertUser.keys() and len(specialAlertUser[user]) > 0:
+        return False
+    return True
 
 def get_pos_by_name(location_name):
     geolocator = GoogleV3()
