@@ -4,13 +4,21 @@ A Slack chat bot in Python built using the Slack API.
 
 Uses the PGo API to get information about Pokémon within one block of a given location and sends alerts to a channel.
 
+![pokebotdemo](https://github.com/tpodder/pokebot/blob/master/pokebotDEMO2.PNG)
+
 Other bot command features:
 
-•	Infomon: Get information about a Pokémon by name using Pokeapi
+![pokebotdemo](https://github.com/tpodder/pokebot/blob/master/pokebotDEMO4.PNG)
 
-•	Jokemon: Sends memes and quotes about Pokémon to the channel
+Infomon
 
-•	Quotemon: Sends motivational quotes with Pokémon references to the channel.
+![pokebotdemo](https://github.com/tpodder/pokebot/blob/master/pokebotDEMO3.PNG)
 
-•	SpecialAlert: Send special alerts for requested Pokémon to a person. 
+
+Jokemon
+
+![pokebotdemo](https://github.com/tpodder/pokebot/blob/master/pokebotDEMO1.PNG)
+
+
+
 
