@@ -1,6 +1,6 @@
 # pokebot
 
-A Slack chat bot in Python built using the Slack API..
+A Slack chat bot in Python built using the Slack API.
 
 Uses the PGo API to get information about Pokémon within one block of a given location and sends alerts to a channel.
 
